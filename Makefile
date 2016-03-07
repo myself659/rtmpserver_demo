@@ -20,9 +20,9 @@ DEF_=-DNO_CRYPTO
 CRYPTO_DEF=$(DEF_$(CRYPTO))
 
 DEF=-DRTMPDUMP_VERSION=\"$(VERSION)\" $(CRYPTO_DEF) $(XDEF)
-OPT=-O2
-CFLAGS=-Wall $(XCFLAGS) $(INC) $(DEF) $(OPT)
-LDFLAGS=-Wall $(XLDFLAGS)
+OPT=-O0
+CFLAGS=-Wall  -g  $(XCFLAGS) $(INC) $(DEF) $(OPT)
+LDFLAGS=-Wall $(XLDFLAGS) -g 
 
 bindir=$(prefix)/bin
 sbindir=$(prefix)/sbin
@@ -52,7 +52,7 @@ EXT_darwin=
 EXT_mingw=.exe
 EXT=$(EXT_$(SYS))
 
-PROGS=rtmpdump rtmpgw rtmpsrv rtmpsuck
+PROGS=rtmpdump rtmpgw rtmpsrv rtmpsuck rtmpepollsrv
 
 all:	$(LIBRTMP) $(PROGS)
 
@@ -67,7 +67,7 @@ install:	$(PROGS)
 	@cd librtmp; $(MAKE) install
 
 clean:
-	rm -f *.o rtmpdump$(EXT) rtmpgw$(EXT) rtmpsrv$(EXT) rtmpsuck$(EXT)
+	rm -f *.o rtmpdump$(EXT) rtmpgw$(EXT) rtmpsrv$(EXT) rtmpsuck$(EXT) rtmpepollsrv$(EXT)
 	@cd librtmp; $(MAKE) clean
 
 FORCE:
@@ -78,6 +78,9 @@ $(LIBRTMP): FORCE
 rtmpdump: rtmpdump.o
 	$(CC) $(LDFLAGS) -o $@$(EXT) $@.o $(LIBS)
 
+rtmpepollsrv: rtmpepollsrv.o
+	$(CC) $(LDFLAGS) -o $@$(EXT) $@.o $(LIBS)
+	
 rtmpsrv: rtmpsrv.o thread.o
 	$(CC) $(LDFLAGS) -o $@$(EXT) $@.o thread.o $(SLIBS)
 
@@ -91,4 +94,5 @@ rtmpgw.o: rtmpgw.c $(INCRTMP) Makefile
 rtmpdump.o: rtmpdump.c $(INCRTMP) Makefile
 rtmpsrv.o: rtmpsrv.c $(INCRTMP) Makefile
 rtmpsuck.o: rtmpsuck.c $(INCRTMP) Makefile
+rtmpepollsrv.o: rtmpepollsrv.c $(INCRTMP) Makefile
 thread.o: thread.c thread.h

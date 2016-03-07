@@ -951,13 +951,12 @@ serverThread(void *arg)
   STREAMING_SERVER *server = arg;
   server->state = STREAMING_ACCEPTING;
 
+  /* ½ÓÊÕ×´Ì¬  */
   while (server->state == STREAMING_ACCEPTING)
   {
     struct sockaddr_in addr;
     socklen_t addrlen = sizeof(struct sockaddr_in);
-    int sockfd =
-      accept(server->socket, (struct sockaddr *) &addr, &addrlen);
-
+    int sockfd = accept(server->socket, (struct sockaddr *) &addr, &addrlen);
     if (sockfd > 0)
     {
 #ifdef linux

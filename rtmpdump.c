@@ -791,7 +791,7 @@ main(int argc, char **argv)
   signal(SIGQUIT, sigIntHandler);
 #endif
 
-  RTMP_debuglevel = RTMP_LOGINFO;
+  RTMP_debuglevel = RTMP_LOGALL;  /* 修改级别 打印所有的log日志   */
 
   // Check for --quiet option before printing any output
   int index = 0;
