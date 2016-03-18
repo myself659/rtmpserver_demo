@@ -118,10 +118,10 @@ extern "C"
     int m_nChannel;
     uint32_t m_nTimeStamp;	/* timestamp */
     int32_t m_nInfoField2;	/* last 4 bytes in a long header */
-    uint32_t m_nBodySize;
-    uint32_t m_nBytesRead;
+    uint32_t m_nBodySize;  /* body 大小 */
+    uint32_t m_nBytesRead; /* 已经读取大小  */
     RTMPChunk *m_chunk;
-    char *m_body;
+    char *m_body; /* body缓存 */
   } RTMPPacket;
 
   typedef struct RTMPSockBuf

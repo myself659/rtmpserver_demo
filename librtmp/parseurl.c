@@ -45,7 +45,8 @@ int RTMP_ParseURL(const char *url, int *protocol, AVal *host, unsigned int *port
 	app->av_val = NULL;
 
 	/* Old School Parsing */
-
+	
+	/* 获取协议类型 */
 	/* look for usual :// pattern */
 	p = strstr(url, "://");
 	if(!p) {
@@ -77,16 +78,18 @@ int RTMP_ParseURL(const char *url, int *protocol, AVal *host, unsigned int *port
 
 	RTMP_Log(RTMP_LOGDEBUG, "Parsed protocol: %d", *protocol);
 
+	/* 解析主机  */
 parsehost:
 	/* let's get the hostname */
 	p+=3;
 
+	
 	/* check for sudden death */
 	if(*p==0) {
 		RTMP_Log(RTMP_LOGWARNING, "No hostname in URL!");
 		return FALSE;
 	}
-
+	
 	end   = p + strlen(p);
 	col   = strchr(p, ':');
 	ques  = strchr(p, '?');
@@ -137,6 +140,7 @@ parsehost:
 	 * application = app[/appinstance]
 	 */
 
+	/* 解析 app */
 	char *slash2, *slash3 = NULL, *slash4 = NULL;
 	int applen, appnamelen;
 
@@ -179,7 +183,7 @@ parsehost:
 		p++;
 
 	if (end-p) {
-		AVal av = {p, end-p};
+		AVal av = {p, end-p}; /* playpath */
 		RTMP_ParsePlaypath(&av, playpath);
 	}
 
@@ -198,6 +202,18 @@ parsehost:
  * mp3 streams: prepend "mp3:", remove extension
  * flv streams: remove extension
  */
+ /* 
+ * 从URL中获取播放路径（playpath）。播放路径是URL中“rtmp://host:port/app/”后面的部分 
+ * 
+ * 获取FMS能够识别的播放路径 
+ * mp4 流: 前面添加 "mp4:", 删除扩展名 
+ * mp3 流: 前面添加 "mp3:", 删除扩展名 
+ * flv 流: 删除扩展名 
+ */ 
+
+ /*
+Todo:需要找一个带slist的实例
+ */
 void RTMP_ParsePlaypath(AVal *in, AVal *out) {
 	int addMP4 = 0;
 	int addMP3 = 0;
@@ -211,9 +227,9 @@ void RTMP_ParsePlaypath(AVal *in, AVal *out) {
 
 	out->av_val = NULL;
 	out->av_len = 0;
-
+	/* ? 开头 或者包括slist字符串  调整开始位置 */
 	if ((*ppstart == '?') &&
-	    (temp=strstr(ppstart, "slist=")) != 0) {
+	    (temp=strstr(ppstart, "slist=")) != 0) {  /*  */
 		ppstart = temp+6;
 		pplen = strlen(ppstart);
 
@@ -226,7 +242,7 @@ void RTMP_ParsePlaypath(AVal *in, AVal *out) {
 	q = strchr(ppstart, '?');
 	if (pplen >= 4) {
 		if (q)
-			ext = q-4;
+			ext = q-4; /* 有? 向前偏移4个字节 */
 		else
 			ext = &ppstart[pplen-4];
 		if ((strncmp(ext, ".f4v", 4) == 0) ||
@@ -243,11 +259,12 @@ void RTMP_ParsePlaypath(AVal *in, AVal *out) {
 		}
 	}
 
+	/* 加5个字节  添加mp4:  与字符串结束标记 */
 	streamname = (char *)malloc((pplen+4+1)*sizeof(char));
 	if (!streamname)
 		return;
 
-	destptr = streamname;
+	destptr = streamname;  
 	if (addMP4) {
 		if (strncmp(ppstart, "mp4:", 4)) {
 			strcpy(destptr, "mp4:");

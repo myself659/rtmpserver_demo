@@ -1379,7 +1379,7 @@ SHandShake(RTMP * r)
 	   SHA256_DIGEST_LENGTH) != 0)
 	{
 	  RTMP_Log(RTMP_LOGWARNING, "%s: Client not genuine Adobe!", __FUNCTION__);
-	  return FALSE;
+	  //return FALSE; 
 	}
       else
 	{

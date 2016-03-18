@@ -17,6 +17,8 @@ a epoll demo for rtmp server
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <sys/epoll.h>
+#include <unistd.h>
+#include <fcntl.h>
 
 #include <assert.h>
 
@@ -29,20 +31,23 @@ a epoll demo for rtmp server
 #include <linux/netfilter_ipv4.h>
 #include <stddef.h>  
 #include <linux/kernel.h>
+#include <stddef.h>
 
 
-
-
-
-
-
-enum
+typedef enum tagRTMPSESSION_STATE
 {
-  STREAMING_ACCEPTING,
-  STREAMING_IN_PROGRESS,
-  STREAMING_STOPPING,
-  STREAMING_STOPPED
-};
+ RTMPSESSION_INIT = 0, 
+ RTMPSESSION_C0 ,
+ RTMPSESSION_C1,
+ RTMPSESSION_S0,
+ RTMPSESSION_S1,
+ RTMPSESSION_C2,
+ RTMPSESSION_S2,
+ RTMPSESSION_CONNECTOK
+}RTMPSESSION_STATE_E;
+
+
+
 
 
 typedef enum tagRTMPSERVER_STATE
@@ -143,6 +148,8 @@ SAVC(secureToken);
 
 /* 内部函数声明  */
 int epoll_op(int iEpollFd, int iOp, int iFd, int iEvent,  EPOLL_CTX *pCtx);
+static 
+int RtmpPktHandle(RTMP_SESSION *pSession);
 
 
 /* 全局变量 */
@@ -154,6 +161,28 @@ static unsigned short g_usRtmpSrvPort = 8080;
 
 static const AVal av_dquote = AVC("\"");
 static const AVal av_escdquote = AVC("\\\"");
+
+static 
+int SetNonBlocking(int nSocket)
+{
+     int opts;
+     opts=fcntl(nSocket, F_GETFL);
+     if(opts<0)
+     {
+          return -1;
+     }
+     opts = opts|O_NONBLOCK;
+     opts = opts|O_NDELAY;
+     if(fcntl(nSocket,F_SETFL,opts)<0)
+     {
+          return -1;
+     }
+ 	
+     int on = 1;
+     setsockopt(nSocket, SOL_TCP, TCP_NODELAY,  &on, sizeof(on));
+     
+	 return 0;
+}
 
 
 static int
@@ -492,12 +521,11 @@ SendPlayStop(RTMP *r)
 
 // Returns 0 for OK/Failed/error, 1 for 'Stop or Complete'
 int
-SessionInvoke(RTMP_SESSION *server,  unsigned int offset)
+SessionInvoke(RTMP_SESSION *server,  RTMPPacket *packet, unsigned int offset)
 {
   const char *body;
   unsigned int nBodySize;
   RTMP *pRtmp = server->prtmp;
-  RTMPPacket *packet = server->pPkt;
   int ret = 0, nRes;
 
   body = packet->m_body + offset;
@@ -524,7 +552,7 @@ SessionInvoke(RTMP_SESSION *server,  unsigned int offset)
   double txn = AMFProp_GetNumber(AMF_GetProp(&obj, NULL, 1));
   RTMP_Log(RTMP_LOGDEBUG, "%s, client invoking <%s>", __FUNCTION__, method.av_val);
 
-  if (AVMATCH(&method, &av_connect))
+  if (AVMATCH(&method, &av_connect)) /* 建立连接 */
   {
     AMFObject cobj;
     AVal pname, pval;
@@ -603,9 +631,9 @@ SessionInvoke(RTMP_SESSION *server,  unsigned int offset)
     }
     SendConnectResult(pRtmp, txn);
   }
-  else if (AVMATCH(&method, &av_createStream))
+  else if (AVMATCH(&method, &av_createStream)) /* 创建流 */
   {
-    SendResultNumber(pRtmp, txn, ++server->streamID);
+    SendResultNumber(pRtmp, txn, ++server->streamID); 
   }
   else if (AVMATCH(&method, &av_getStreamLength))
   {
@@ -620,7 +648,7 @@ SessionInvoke(RTMP_SESSION *server,  unsigned int offset)
     server->argc += 2;
     pRtmp->Link.usherToken = usherToken;
   }
-  else if (AVMATCH(&method, &av_play))
+  else if (AVMATCH(&method, &av_play))  /* play  */
   {
     char *file, *p, *q, *cmd, *ptr;
     AVal *argv, av;
@@ -811,15 +839,32 @@ void  RtmpSessionFini(RTMP_SESSION *pSession)
 	return ;	
 }
 
+void RTMPPacket_Init(RTMPPacket *p)
+{
+  p->m_headerType = 0;
+  p->m_packetType = 0;
+  p->m_nChannel = 0;
+  p->m_nTimeStamp = 0;
+  p->m_nInfoField2 = 0;
+  p->m_hasAbsTimestamp = FALSE;
+  p->m_nBodySize = 0;
+  p->m_nBytesRead = 0;
+  p->m_chunk  = NULL;
+  p->m_body = NULL;
+}
+
 int RtmpSessionHandshake(RTMP_SESSION *pSession)
 {
 	int iRet = 0;
-	RTMPPacket *pPkt = (RTMPPacket *)malloc(sizeof(RTMPPacket));
-	if(NULL == pPkt)
+	RTMPPacket *packet = (RTMPPacket *)malloc(sizeof(RTMPPacket));
+	if(NULL == packet)
 	{
-		return ERROR_FAILED;	
+		
+		return ERROR_FAILED;
 	}
-	pSession->pPkt = pPkt;
+	RTMPPacket_Init(packet);
+	pSession->pPkt = packet;
+	
 	RTMP *rtmp = RTMP_Alloc(); 
 	if(NULL == rtmp )
 	{
@@ -830,13 +875,16 @@ int RtmpSessionHandshake(RTMP_SESSION *pSession)
 	rtmp->m_sb.sb_socket =  pSession->socket;
 	pSession->prtmp = rtmp;
 
-	pSession->state = STREAMING_IN_PROGRESS;
-
+	pSession->state = RTMPSERVER_STATE_INIT;
+	
 	/* 进行握手处理 */
-	if(!RTMP_Serve(rtmp))
+	if(RTMP_Serve(rtmp))
 	{
+		RTMPPacket_Free(pSession->pPkt);
+		RTMPPacket_Init(pSession->pPkt);
 		pSession->handshake = 1;
 		pSession->arglen = 0;
+		SetNonBlocking(pSession->socket);
 	}
 	else
 	{
@@ -860,20 +908,10 @@ void RtmpEPOLLCTXFini(EPOLL_CTX *pCtx)
 	return ;
 }
 
-
-
-int RtmpPktHandle(RTMP_SESSION *pSession)
+static 
+void  RtmpDispatchPkt(RTMP_SESSION *pSession, RTMPPacket *pPkt)
 {
 	RTMP *pRtmp  =  pSession->prtmp;
-	RTMPPacket *pPkt = pSession->pPkt;
-
-	if(!RTMP_IsConnected(pRtmp)  || 
-	   !RTMP_ReadPacket(pRtmp, pPkt) ||
-	   !(RTMPPacket_IsReady(pPkt)))
-	{
-		return -1;
-	}
-	
 	/* 处理报文 */	
 	RTMP_Log(RTMP_LOGDEBUG, "%s, received packet type %02X, size %u bytes", __FUNCTION__,
 pPkt->m_packetType, pPkt->m_nBodySize);
@@ -926,7 +964,7 @@ pPkt->m_packetType, pPkt->m_nBodySize);
 		    RTMP_Log(RTMP_LOGDEBUG, "%s, flex message, size %u bytes, not fully supported",
 		             __FUNCTION__, pPkt->m_nBodySize);
 		    
-		    if (SessionInvoke(pSession, 1))
+		    if (SessionInvoke(pSession, pPkt, 1))
 		      RTMP_Close(pSession->prtmp);
 		    break;
 	  	}
@@ -943,7 +981,7 @@ pPkt->m_packetType, pPkt->m_nBodySize);
 		    RTMP_Log(RTMP_LOGDEBUG, "%s, received: invoke %u bytes", __FUNCTION__,
 		             pPkt->m_nBodySize);
 		   
-		    if (SessionInvoke(pSession, 0))
+		    if (SessionInvoke(pSession, pPkt, 0))
 		      RTMP_Close(pRtmp);
 		    break;
 		}
@@ -954,44 +992,77 @@ pPkt->m_packetType, pPkt->m_nBodySize);
 	  	default:
 	  	{
 	    	RTMP_Log(RTMP_LOGDEBUG, "%s, unknown packet type received: 0x%02x", __FUNCTION__,
-	             pPkt->m_packetType);
+	            pPkt->m_packetType);
 			#ifdef _DEBUG
 			RTMP_LogHex(RTMP_LOGDEBUG, pPkt->m_body, pPkt->m_nBodySize);
 			#endif
 	  	}
 	}
-    
-      
-	RTMPPacket_Free(pPkt);
-	
 
+    RTMPPacket_Free(pPkt);
+    RTMPPacket_Init(pPkt);
+}
+
+
+static 
+int RtmpPktHandle(RTMP_SESSION *pSession)
+{
+	RTMP *pRtmp  =  pSession->prtmp;
+	RTMPPacket *pPkt = pSession->pPkt;
+	int readok = FALSE;
+
+	if(!RTMP_IsConnected(pRtmp))
+	{
+		return  -1;
+	}
+	
+	/* 收包逻辑处理 */
+	while(readok = RTMP_ReadPacket(pRtmp, pPkt))
+	{
+		if(pPkt->m_nBodySize != pPkt->m_nBytesRead)
+		{
+			continue;
+		}
+		
+		RtmpDispatchPkt(pSession, pPkt);		
+	}
+	  
 	return 0;
 }
 
+void  RtmpSessionHandleFin(RTMP_SESSION *pSession)
+{
+	EPOLL_CTX *pCtx;
+	RtmpSessionFini(pSession);
+	pCtx = pSession - offsetof( EPOLL_CTX, pContext);
+	RtmpEPOLLCTXFini(pCtx);
+
+	return ;
+}
 int RtmpSessionHandle(int iFd, int iEvent, void *pContext)
 {
 	int iRet;
 	RTMP_SESSION *pSession = (RTMP_SESSION *)pContext;
-	EPOLL_CTX *pCtx;
 	
-	if(iEvent|EPOLLIN )
+	if(iEvent&EPOLLIN )
 	{
 		if(0 == pSession->handshake)
 		{
 			iRet = RtmpSessionHandshake(pSession);		
   			if(0 != iRet)
   			{
-				RtmpSessionFini(pSession);
-				//pCtx = container_of(&pSession, EPOLL_CTX, pContext);
-				//RtmpEPOLLCTXFini(pCtx);
+				RtmpSessionHandleFin(pSession);	
   			}
 		}
 		else
-		{
+		{	
 			iRet = 	RtmpPktHandle(pSession);
 		}
 	}
-
+	if(iEvent & (EPOLLERR |EPOLLHUP) )
+	{
+		RtmpSessionHandleFin(pSession);
+	}
 		
 	return iRet;
 }
@@ -1011,7 +1082,7 @@ int ListenHandle(int iFd, int iEvent, void *pContext)
 	
 	if(iEvent|EPOLLIN)
 	{
-		iNewFd =  accept(iFd, &tmpAddr, (socklen_t *)&iSocketSize); 
+		iNewFd = accept(iFd, &tmpAddr, (socklen_t *)&iSocketSize); 
 		if(RTMP_EPOLLSRV_INVALIDFD < iNewFd)	
 		{
 			pServer = (RTMP_SESSION *)malloc(sizeof(RTMP_SESSION));
