@@ -138,6 +138,7 @@ SAVC(level);
 SAVC(code);
 SAVC(description);
 SAVC(secureToken);
+SAVC(publish); 
 
 #define  RTMP_EPOLLSRV_INVALIDFD (-1)
 #define  RTMP_EPOLLSRV_MAXEPOLL   (16)
@@ -402,12 +403,15 @@ SendResultNumber(RTMP *r, double txn, double ID)
   return RTMP_SendPacket(r, &packet, FALSE);
 }
 
-SAVC(onStatus);
+SAVC(onStatus);  /* 增加发布回应处理 */
 SAVC(status);
 static const AVal av_NetStream_Play_Start = AVC("NetStream.Play.Start");
 static const AVal av_Started_playing = AVC("Started playing");
 static const AVal av_NetStream_Play_Stop = AVC("NetStream.Play.Stop");
 static const AVal av_Stopped_playing = AVC("Stopped playing");
+static const AVal av_NetStream_Publish_Start = AVC("NetStream.Publish.Start");
+static const AVal av_NetStream_Publish_Desc = AVC("Started publishing stream");
+
 SAVC(details);
 SAVC(clientid);
 static const AVal av_NetStream_Authenticate_UsherToken = AVC("NetStream.Authenticate.UsherToken");
@@ -452,6 +456,37 @@ AVreplace(AVal *src, const AVal *orig, const AVal *repl)
   src->av_len = dptr - dest;
 }
 
+static int SendPublishStart(RTMP * r)
+{
+
+	RTMPPacket packet;
+	char pbuf[512], *pend = pbuf + sizeof(pbuf);
+	
+	packet.m_nChannel = 0x03;     // control channel (invoke)
+    packet.m_headerType = 1; /* RTMP_PACKET_SIZE_MEDIUM; */
+    packet.m_packetType = RTMP_PACKET_TYPE_INVOKE;
+    packet.m_nTimeStamp = 0;
+    packet.m_nInfoField2 = 0;
+    packet.m_hasAbsTimestamp = 0;
+    packet.m_body = pbuf + RTMP_MAX_HEADER_SIZE;
+    
+	char *enc = packet.m_body;
+	enc = AMF_EncodeString(enc, pend, &av_onStatus);
+	enc = AMF_EncodeNumber(enc, pend, 0);
+	*enc++ = AMF_OBJECT;
+
+	enc = AMF_EncodeNamedString(enc, pend, &av_level, &av_status);
+	enc = AMF_EncodeNamedString(enc, pend, &av_code, &av_NetStream_Publish_Start);
+	enc = AMF_EncodeNamedString(enc, pend, &av_description, &av_NetStream_Publish_Desc); 
+	enc = AMF_EncodeNamedString(enc, pend, &av_clientid, &av_clientid);
+	*enc++ = 0;
+	*enc++ = 0;
+	*enc++ = AMF_OBJECT_END;
+
+	packet.m_nBodySize = enc - packet.m_body;
+	return RTMP_SendPacket(r, &packet, FALSE);
+
+}
 
 static int
 SendPlayStart(RTMP *r)
@@ -634,6 +669,10 @@ SessionInvoke(RTMP_SESSION *server,  RTMPPacket *packet, unsigned int offset)
   else if (AVMATCH(&method, &av_createStream)) /* 创建流 */
   {
     SendResultNumber(pRtmp, txn, ++server->streamID); 
+  }
+  else  if(AVMATCH(&method, &av_publish))
+  {
+	SendPublishStart(pRtmp);
   }
   else if (AVMATCH(&method, &av_getStreamLength))
   {
