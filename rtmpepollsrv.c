@@ -473,6 +473,7 @@ static int SendPublishStart(RTMP * r)
 	char *enc = packet.m_body;
 	enc = AMF_EncodeString(enc, pend, &av_onStatus);
 	enc = AMF_EncodeNumber(enc, pend, 0);
+	*enc++ = AMF_NULL; 
 	*enc++ = AMF_OBJECT;
 
 	enc = AMF_EncodeNamedString(enc, pend, &av_level, &av_status);
@@ -505,6 +506,7 @@ SendPlayStart(RTMP *r)
   char *enc = packet.m_body;
   enc = AMF_EncodeString(enc, pend, &av_onStatus);
   enc = AMF_EncodeNumber(enc, pend, 0);
+  *enc++ = AMF_NULL; 
   *enc++ = AMF_OBJECT;
 
   enc = AMF_EncodeNamedString(enc, pend, &av_level, &av_status);
@@ -537,6 +539,7 @@ SendPlayStop(RTMP *r)
   char *enc = packet.m_body;
   enc = AMF_EncodeString(enc, pend, &av_onStatus);
   enc = AMF_EncodeNumber(enc, pend, 0);
+  *enc++ = AMF_NULL; 
   *enc++ = AMF_OBJECT;
 
   enc = AMF_EncodeNamedString(enc, pend, &av_level, &av_status);
