@@ -1,7 +1,7 @@
 
 
 /* 
-a epoll demo for rtmp server 
+a epoll demo for rtmp server  rely  librtmp
 
 */
 
